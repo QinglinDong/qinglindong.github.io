@@ -13,21 +13,21 @@ This post covers every major feature, what problem it solves, and how to use it.
 
 ## The Problem Space
 
-An AI coding agent faces nine constraints. They fall into three layers:
+An AI coding agent faces nine constraints. They fall into three layers — the agent's internal limits, how it coordinates with the outside world, and the developer's experience.
 
-```
-          AGENT               COORDINATION            HUMAN
-    ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-    │ Knowledge  2 │     │Parallelism 2 │     │ Ergonomics 4 │
-    │ Attention  2 │     │   Reach    2 │     │Adaptability 3│
-    │ Autonomy   4 │     │   Safety   3 │     │    Cost     2│
-    └──────────────┘     └──────────────┘     └──────────────┘
-           8                    7                    9
-```
+| Layer | Area | Question | Solutions |
+|---|---|---|---|
+| **Agent** | Knowledge | What does it know at session start? | 2 |
+| | Attention | What can it hold in working memory? | 2 |
+| | Autonomy | How long can it work without you? | 4 |
+| **Coordination** | Parallelism | How many things can it do at once? | 2 |
+| | Reach | What systems can it interact with? | 2 |
+| | Safety | How do you prevent it from causing damage? | 3 |
+| **Human** | Ergonomics | How do you minimize interaction friction? | 4 |
+| | Adaptability | How do you tailor it to your environment? | 3 |
+| | Cost | How do you maximize output per dollar? | 2 |
 
-Numbers show how many solutions exist per area. **Cost (2)** and **Parallelism (2)** are the sparsest — the biggest opportunity gaps for new tooling and tricks.
-
-Every entry in this post maps to exactly one area. If a new trick doesn't fit any of the nine, it's opening a tenth — pay attention.
+**Cost (2)** and **Parallelism (2)** are the sparsest — the biggest opportunity gaps for new tooling and tricks. Every entry in this post maps to exactly one area. If a new trick doesn't fit any of the nine, it's opening a tenth — pay attention.
 
 ### Agent layer — internal cognitive limits
 
