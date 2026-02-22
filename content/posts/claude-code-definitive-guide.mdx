@@ -1,158 +1,285 @@
 ---
-title: "The Definitive Guide to Claude Code: Every Feature, Every Trick, Every Problem It Solves"
-date: "2026-02-21"
-summary: "A comprehensive reference covering every major Claude Code feature — from RALPH loops to the Agent SDK — with practical examples and the specific problems each one solves."
+title: "The Definitive Guide to Claude Code: A Framework for Long-Horizon AI Agents"
+date: "2026-02-22"
+summary: "Why AI coding agents fail on complex tasks — and how Claude Code solves the four fundamental bottlenecks of memory, planning, execution, and verification through scaffolding and multi-agent architecture."
 tags: ["claude-code", "developer-tools", "AI-coding", "agentic-workflows", "productivity"]
 ---
 
-Claude Code is Anthropic's agentic coding assistant that lives in your terminal. Since its launch in February 2025, it has evolved from a simple chat-in-terminal experience into a full-blown autonomous development platform — with hooks, sub-agents, worktrees, MCP servers, custom skills, and an SDK for building your own agents on top of it.
+How do you make an AI agent work reliably, autonomously, and for hours on complex tasks?
 
-This post covers every major feature, what problem it solves, and how to use it. Bookmark it. You will come back.
+This is the root problem of **long-horizon autonomous agents** — and it is the problem Claude Code exists to solve. Since launching in February 2025, Claude Code has evolved from a terminal chatbot into a full autonomous development platform. Every feature it ships addresses a specific failure mode of AI agents working on real-world tasks.
+
+This post covers every major feature, organized by the problem it solves. Bookmark it. You will come back.
 
 ---
 
-## The Problem Space
+## The Four Bottlenecks
 
-An AI coding agent has nine functional problems. Every feature in this post exists to solve exactly one of them.
+An AI agent working on a complex, multi-step task hits four independent bottlenecks. Solving one does not solve the others.
 
-| Area | Problem | Goal | Solutions |
+| Bottleneck | What Happens | Analogy |
+|---|---|---|
+| **Memory** | Context window is finite. New information pushes out old information. The agent forgets what it learned 20 minutes ago. | A person with only working memory and no notebook. |
+| **Planning** | The more steps a task has, the more the goal drifts. Decisions made at step 50 contradict decisions made at step 5. | Writing 100 lines of code and forgetting why you started. |
+| **Execution** | Errors compound. One small mistake causes every subsequent step to diverge. No self-correction mechanism means the agent digs deeper into the wrong path. | Taking a wrong turn in a maze — every step after makes it worse. |
+| **Verification** | The agent cannot accurately judge whether it is on the right track. It proceeds confidently toward the wrong answer. | No map, no compass. |
+
+These bottlenecks are **MECE** (mutually exclusive, collectively exhaustive). Every failure mode of an autonomous coding agent traces back to one of these four.
+
+---
+
+## Three Layers of Solutions
+
+Solutions exist at three distinct layers. Claude Code operates primarily at **Layer 2** and **Layer 3**.
+
+| Layer | Strategy | What It Does | Bottlenecks Addressed |
 |---|---|---|---|
-| **Knowledge** | Agent starts every session blank — no memory of your stack, conventions, or past work | Retain project understanding across sessions | 2 |
-| **Attention** | Context window fills up — quality degrades, instructions forgotten, agent drifts | Stay sharp through long sessions | 2 |
-| **Autonomy** | Agent stops after each step and waits for you to prompt again | Complete multi-step work without babysitting | 4 |
-| **Parallelism** | Agent does one thing at a time in one place | Run multiple tasks simultaneously without collision | 2 |
-| **Reach** | Agent is blind to anything beyond local files and shell | Connect to databases, APIs, editors, CI | 2 |
-| **Safety** | Autonomous agent can `rm -rf`, force-push, or corrupt state | Grant power without risking damage | 3 |
-| **Ergonomics** | Every interaction requires typing full instructions from scratch | Minimize keystrokes and friction | 4 |
-| **Adaptability** | Every team, project, and stack is different | Tailor behavior without forking the tool | 3 |
-| **Cost** | Tokens are money with no visibility into spend or waste | Get more done per dollar | 2 |
+| **Layer 1: Model** | Make the brain better | Larger context windows, better reasoning via RL, inference-time scaling (o1/o3-style "think longer") | Memory, Planning |
+| **Layer 2: Scaffolding** | Add external organs | Persistent memory files, structured workflows, deterministic verification hooks — all outside the model | Memory, Planning, Execution, Verification |
+| **Layer 3: Multi-Agent** | Divide and conquer | Multiple specialized agents coordinating — planner, executor, reviewer — each with isolated context | All four (but introduces coordination complexity) |
 
-**Cost (2)** and **Parallelism (2)** are the sparsest — the biggest opportunity gaps for new tooling and tricks. Every entry in this post maps to exactly one area. If a new trick doesn't fit any of the nine, it's opening a tenth — pay attention.
-
-### Agent layer — internal cognitive limits
-
-**Knowledge** — What does the agent know at session start?
-
-| Feature | Problem | Solution | Shipped | Ref |
-|---|---|---|---|---|
-| **CLAUDE.md** | Every session starts from zero — re-explain your stack, conventions, build commands each time | Persistent markdown auto-loaded at session start. Hierarchy: user → project → `.claude/rules/` directory. | Feb 2025 | [Memory docs](https://docs.anthropic.com/en/docs/claude-code/memory) |
-| **Auto-Memory** | Agent forgets discoveries (key commands, architectural patterns, your preferences) between sessions | Agent writes notes to itself at `~/.claude/projects/…/memory/`. First 200 lines loaded every session. `#` to save manually. | Mid 2025 | [Memory docs](https://docs.anthropic.com/en/docs/claude-code/memory) |
-
-**Attention** — What can the agent hold in working memory?
-
-| Feature | Problem | Solution | Shipped | Ref |
-|---|---|---|---|---|
-| **Context Management** | Long sessions degrade — quality drops, instructions forgotten, agent loses sharpness silently | `/compact` compresses history (run between tasks), `/clear` hard-resets, `/context` visualizes usage. Auto-compact at 95%. | Feb 2025 | [Compact docs](https://docs.anthropic.com/en/docs/claude-code/compact) |
-| **Tool Use Patterns** | Bash-based file ops (`cat`, `sed`, `grep`) return noisy output that bloats context and wastes tokens | Dedicated tools (Glob, Grep, Read, Edit, Write) return clean output. Multiple calls batch in a single turn. | Feb 2025 | [Best practices](https://docs.anthropic.com/en/docs/claude-code/best-practices) |
-
-**Autonomy** — How long can the agent work without you?
-
-Two paradigms: **closed-loop** (agent iterates until done, no human steering) and **open-loop** (agent writes plans to files, human can read and redirect mid-flight).
-
-| Feature | Problem | Solution | Shipped | Ref |
-|---|---|---|---|---|
-| **Agentic Workflows** | Traditional assistants generate code and hand it off — you do the paste-test-debug loop | Chains tool calls: write → test → read errors → fix → verify. Full cycle, no hand-off. | Feb 2025 | [Overview](https://docs.anthropic.com/en/docs/claude-code/overview) |
-| **RALPH Loops** (closed) | You are still the outer loop — prompting, reviewing, re-prompting for hours on batch work | Stop-hook loop with completion promise iterates autonomously until done. No human in the loop. You sleep, it ships. | Mid 2025 | [ghuntley.com/ralph](https://ghuntley.com/ralph/) |
-| **Plan-File Loops** (open) | Closed loops are unsteerable — you cannot redirect without killing the session | Agent reads a plan file (e.g. `TODO.md`), works through items, checks for edits each iteration. Human steers by editing the file. | Mid 2025 | [ultrathink.me](https://ultrathink.me/blog/ai-coding-open-loop) |
-| **Headless Mode** | Interactive mode requires a human at the terminal — cannot embed in CI/CD or scripts | `-p` flag for pipelines, cron jobs, GitHub Actions. Structured JSON output. `--continue`/`--resume` for chaining. | Feb 2025 | [CLI docs](https://docs.anthropic.com/en/docs/claude-code/cli-usage) |
-
-### Coordination layer — how capability multiplies
-
-**Parallelism** — How many things can it do at once?
-
-| Feature | Problem | Solution | Shipped | Ref |
-|---|---|---|---|---|
-| **Sub-Agents** | Single context overloaded with competing concerns. Sequential execution wastes time on independent tasks. | Spawns specialized agents (Explore, Plan, general-purpose, custom AGENT.md) in isolated contexts. Parallel fan-out, sequential chains, or `Ctrl+B` background. | Mid 2025 | [Sub-agents docs](https://docs.anthropic.com/en/docs/claude-code/sub-agents) |
-| **Worktrees** | Multiple Claude sessions editing the same directory corrupt each other's files | Isolated git worktree per session — shared history, separate working dirs. `isolation: worktree` for sub-agents. | Mid 2025 | [Worktree docs](https://docs.anthropic.com/en/docs/claude-code/worktrees) |
-
-**Reach** — What systems can the agent interact with?
-
-| Feature | Problem | Solution | Shipped | Ref |
-|---|---|---|---|---|
-| **MCP Servers** | Agent can only see filesystem and shell — blind to databases, APIs, internal tools | Universal protocol connects to any external service. Stdio, SSE, or HTTP transport. `.mcp.json` for team sharing. | Feb 2025 | [MCP docs](https://docs.anthropic.com/en/docs/claude-code/mcp) |
-| **IDE Integrations** | Constant context-switching between editor and terminal; manually copying code and errors | Native panels in VS Code and JetBrains. Diffs in-editor, @-mentions, checkpoint undo. | Mid 2025 | [IDE docs](https://docs.anthropic.com/en/docs/claude-code/ide-integrations) |
-
-**Safety** — How do you prevent damage while granting power?
-
-| Feature | Problem | Solution | Shipped | Ref |
-|---|---|---|---|---|
-| **Permission Modes** | Full autonomy risks `rm -rf`; full manual approval is too slow to be useful | Five tiers: plan → default → acceptEdits → dontAsk → bypass. Allowlist/denylist with `deny > ask > allow`. | Feb 2025 | [Security docs](https://docs.anthropic.com/en/docs/claude-code/security) |
-| **Hooks** | LLM behavior is probabilistic — instructions followed ~90% of the time, not 100% | Deterministic shell commands on lifecycle events. PreToolUse blocks; PostToolUse enforces. 100% reliable. | May 2025 | [Hooks docs](https://docs.anthropic.com/en/docs/claude-code/hooks) |
-| **Plan Mode** | Agent starts editing immediately on complex tasks — expensive to course-correct after the fact | Read-only exploration, structured plan output, execution only after explicit approval. | Feb 2025 | [CLI docs](https://docs.anthropic.com/en/docs/claude-code/cli-usage) |
-
-### Human layer — the developer's experience
-
-**Ergonomics** — How do you minimize interaction friction?
-
-| Feature | Problem | Solution | Shipped | Ref |
-|---|---|---|---|---|
-| **Slash Commands** | Repetitive multi-step workflows need full prompts each time | One-keystroke: `/compact`, `/init`, `/plan`, `/cost`, `/doctor`, `/model`, `/review`, etc. | Feb 2025 | [Slash commands](https://docs.anthropic.com/en/docs/claude-code/slash-commands) |
-| **Keyboard Shortcuts** | Typing commands or reaching for the mouse breaks flow state | 20+ shortcuts: `Shift+Tab` cycles modes, `Ctrl+B` backgrounds tasks, `#` saves memory, `@` mentions files, `!` runs bash. | Feb 2025 | [Interactive mode](https://docs.anthropic.com/en/docs/claude-code/interactive-mode) |
-| **Conversation Rewind** | Wrong turns are expensive — bad edits consume context and require manual cleanup to undo | `Esc Esc` rewinds conversation and code to any previous checkpoint. Surgically undo without losing clarity. | Feb 2025 | [Interactive mode](https://docs.anthropic.com/en/docs/claude-code/interactive-mode) |
-| **Git Workflows** | Commit messages and PR descriptions are tedious ceremony, repeated daily | Analyzes diffs, follows CLAUDE.md conventions, creates commits and PRs via `gh`. Co-authored attribution. | Feb 2025 | [Common workflows](https://docs.anthropic.com/en/docs/claude-code/common-workflows) |
-
-**Adaptability** — How do you tailor the agent to your environment?
-
-| Feature | Problem | Solution | Shipped | Ref |
-|---|---|---|---|---|
-| **Custom Skills** | Team-specific workflows (deploy, migrate, audit) have no reusable encoding | Markdown SKILL.md files become slash commands. `$ARGUMENTS`, `context: fork`, `allowed-tools`. | Mid 2025 | [Skills docs](https://docs.anthropic.com/en/docs/claude-code/skills) |
-| **Settings Hierarchy** | Personal preferences, team conventions, and enterprise policies collide at the same scope | Five-tier JSON: user → project shared → project local → CLI args → managed admin policy. | Feb 2025 | [Settings docs](https://docs.anthropic.com/en/docs/claude-code/settings) |
-| **Agent SDK** | Claude Code is terminal-only — cannot embed the agent engine in apps or custom pipelines | TypeScript/Python library exposing the agent loop, built-in tools, and context management. | Mid 2025 | [SDK docs](https://docs.anthropic.com/en/docs/claude-code/sdk) |
-
-**Cost** — How do you maximize output per dollar?
-
-| Feature | Problem | Solution | Shipped | Ref |
-|---|---|---|---|---|
-| **Model Routing** | Every task uses the most expensive model, even trivial sub-tasks and simple lookups | `/model` and `Alt+P` switch mid-session. Sub-agents target cheaper models (Haiku for Explore). Match cost to complexity. | Feb 2025 | [CLI docs](https://docs.anthropic.com/en/docs/claude-code/cli-usage) |
-| **Cost Visibility** | No real-time awareness of token spend; context bloat burns money silently with no feedback | `/cost` shows session tokens and spend. `/context` visualizes what's consuming the window. Budget before you burn. | Feb 2025 | [Slash commands](https://docs.anthropic.com/en/docs/claude-code/slash-commands) |
+Layer 1 is Anthropic's job (and Google's, and OpenAI's). Layers 2 and 3 are where Claude Code's features live.
 
 ---
 
-## 1. RALPH Loops — Autonomous Iteration Without Human Babysitting
+## The Feature Map
 
-### What it is
+Every Claude Code feature exists to solve one or more of the four bottlenecks, at a specific solution layer.
 
-RALPH (named after Ralph Wiggum from *The Simpsons*) is an autonomous loop technique for Claude Code. In its purest form, it is a `while` loop that repeatedly feeds Claude a prompt until the task is complete. The official implementation ships as a Claude Code plugin that uses a **Stop hook** to intercept Claude's exit attempts, re-feed the original prompt, and continue the cycle.
+| Feature | Layer | Bottleneck | What It Does |
+|---|---|---|---|
+| CLAUDE.md | 2 — External Memory | Memory | Persistent project context loaded every session |
+| Auto-Memory | 2 — External Memory | Memory | Agent writes notes to itself between sessions |
+| Context Management | 2 — External Memory | Memory | /compact, /clear, /context — keep the window clean |
+| Tool Use Patterns | 2 — External Memory | Memory | Dedicated tools reduce context waste vs. Bash |
+| Plan Mode | 2 — Process Discipline | Planning | Read-only exploration, then structured plan, then execute |
+| RALPH Loops | 2 — Process Discipline | Planning, Execution | Autonomous closed-loop iteration with completion promise |
+| Plan-File Loops | 2 — Process Discipline | Planning, Execution | Open-loop iteration steered via shared file |
+| Agentic Workflows | 2 — Process Discipline | Execution | Write → test → read errors → fix → verify loop |
+| Headless Mode | 2 — Process Discipline | Execution | Non-interactive execution for CI/CD and scripts |
+| Hooks | 2 — Verification | Verification, Execution | Deterministic shell commands on lifecycle events — 100% reliable |
+| Permission Modes | 2 — Verification | Verification | Tiered trust levels prevent dangerous actions |
+| Sub-Agents | 3 — Multi-Agent | All four | Isolated specialized agents for parallel/sequential work |
+| Worktrees | 3 — Multi-Agent | Execution | Isolated git working directories prevent file collisions |
+| Agent SDK | 3 — Multi-Agent | All four | Build custom multi-agent systems programmatically |
 
-### What problem it solves
+Features that extend the agent's *reach* and *ergonomics* — MCP servers, IDE integrations, slash commands, keyboard shortcuts, custom skills, settings, git workflows, and cost management — are covered in the Capability Layer section below.
 
-Without RALPH, you are the loop. You give Claude a task, it finishes one step, you review, you prompt again. For large-scale work — refactoring an entire module, generating test coverage for 40 files, triaging a backlog of tickets — this human-in-the-loop overhead is the bottleneck. RALPH removes you from the loop so Claude iterates autonomously until it is genuinely done.
+---
 
-### How to use it
+## Layer 1: The Model — What Claude Code Cannot Change
 
-Install the plugin and invoke it:
+Claude Code does not control the model. But it benefits from every model improvement:
+
+- **Larger context windows** (Gemini's 1M→2M token trajectory) ease the memory bottleneck by giving the agent more "RAM."
+- **Better reasoning via RL** (reinforcement learning for long-horizon focus) reduces planning drift.
+- **Inference-time scaling** (the o1/o3 paradigm of "thinking longer before answering") improves decision quality on complex steps.
+
+These improvements help, but they are not sufficient. A model with a 2M-token window still forgets if the task takes 4M tokens of reasoning. Better reasoning still drifts over hundreds of steps. That is why scaffolding and multi-agent architecture exist.
+
+---
+
+## Layer 2: Scaffolding — Where Claude Code Lives
+
+Scaffolding adds structure *around* the model without changing it. Claude Code's scaffolding breaks into three subsystems, each targeting specific bottlenecks.
+
+### 2A. External Memory — Solving the Memory Bottleneck
+
+The memory bottleneck: context window is finite, and new information pushes out old information.
+
+The solution: write important things to "disk" — persistent files that survive context compaction and session boundaries.
+
+#### CLAUDE.md — Teaching Claude Your Project's DNA
+
+CLAUDE.md is a markdown file that Claude reads automatically at the start of every session. It contains persistent context about your project: coding conventions, architecture decisions, build commands, testing instructions, and anything else you would otherwise repeat in every prompt.
+
+Without CLAUDE.md, every new session starts from zero. With it, Claude has institutional memory before you say a word.
+
+**The memory hierarchy:**
+
+| Level | Location | Scope |
+|---|---|---|
+| User memory | `~/.claude/CLAUDE.md` | All your projects. Global preferences. |
+| Project memory | `CLAUDE.md` at repo root | This repo. Tech stack, patterns, build commands. Version-controlled. |
+| Rules directory | `.claude/rules/*.md` | Organized, focused rule files for larger projects. |
+| Nested directories | `packages/frontend/.claude/rules/` | Monorepo support. Package-specific rules. |
+
+Run `/init` to generate a starter CLAUDE.md, then customize it:
+
+```markdown
+# Project: MyApp
+
+## Tech Stack
+- TypeScript, React 18, Next.js 14 App Router
+- Tailwind CSS for styling
+- Prisma ORM with PostgreSQL
+- Vitest for testing
+
+## Conventions
+- Use named exports, not default exports
+- All API routes return `{ data, error }` shape
+- Commit messages follow Conventional Commits
+- Never use `any` type — use `unknown` and narrow
+
+## Common Commands
+- `pnpm dev` — start dev server
+- `pnpm test` — run test suite
+- `pnpm lint` — run ESLint + Prettier check
+- `pnpm db:migrate` — run Prisma migrations
+```
+
+Press `#` during a session to add a memory. Type your instruction and hit Enter — Claude writes it to the appropriate CLAUDE.md.
+
+#### Auto-Memory — Claude Writes Notes to Itself
+
+Auto-memory is a persistent directory where Claude records learnings, patterns, and insights *as it works*. Unlike CLAUDE.md (which you write for Claude), auto-memory contains notes Claude writes for itself.
+
+Each project gets its own memory directory at `~/.claude/projects/<project-hash>/memory/`. The first 200 lines of `MEMORY.md` are loaded into Claude's system prompt every session. Claude writes to memory when it discovers something worth remembering: a non-obvious build command, an architectural pattern, a preference you expressed.
+
+This is the "notebook" that the four-bottleneck analogy says is missing. The agent has working memory (context window) *and* persistent storage (auto-memory files).
+
+#### Context Management — Keeping the Window Clean
+
+Context degradation is the primary failure mode of long sessions. As the window fills, response quality drops, costs increase, and Claude starts forgetting earlier instructions.
+
+**`/compact`** — Compresses conversation history, preserving key decisions and discarding noise. Run this every time you finish a task:
+
+```
+/compact Focus only on the authentication refactor. Discard everything about styling.
+```
+
+Auto-compact triggers at ~95% capacity, but do not wait for it.
+
+**`/clear`** — Hard reset. Use when switching to a completely unrelated task.
+
+**`/context`** — Colored grid showing what is consuming your window. Diagnose why Claude seems confused.
+
+**Re-inject context after compaction** with a `SessionStart` hook:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Reminder: use Bun, not npm. Run bun test before committing.'"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+#### Tool Use Patterns — Reducing Context Waste
+
+Using `cat` via Bash to read a file wastes context on shell overhead. Claude Code's dedicated tools (Glob, Grep, Read, Edit, Write) return clean, minimal output.
+
+| Task | Use This | Not This |
+|---|---|---|
+| Search for files by name | **Glob** (`**/*.ts`) | `find` via Bash |
+| Search file contents | **Grep** (regex patterns) | `grep` or `rg` via Bash |
+| Read a file | **Read** (with line ranges) | `cat` / `head` / `tail` via Bash |
+| Edit part of a file | **Edit** (string replacement) | `sed` / `awk` via Bash |
+| Write a new file | **Write** (full content) | `echo >` via Bash |
+| Run commands | **Bash** | N/A |
+
+Why this matters beyond context savings:
+1. **Permissions**: Read and Edit go through the permission system. `cat` via Bash does not.
+2. **Parallel execution**: Multiple Glob and Grep calls batch in a single turn.
+3. **Hooks**: PreToolUse and PostToolUse hooks trigger on Edit or Write. They cannot trigger on `sed` through Bash.
+
+---
+
+### 2B. Process Discipline — Solving the Planning and Execution Bottlenecks
+
+The planning bottleneck: the more steps, the more the goal drifts.
+The execution bottleneck: errors compound without self-correction.
+
+The solution: enforce structured workflows — think before acting, iterate with verification, maintain explicit plans.
+
+#### Plan Mode — Think Before You Act
+
+Plan Mode restricts Claude to read-only operations. It explores your codebase using Glob, Grep, and Read, creates a detailed implementation plan, and waits for your approval before executing.
+
+For complex changes — refactoring auth, migrating a database schema, restructuring a module — you do not want Claude to start changing files immediately. Plan Mode prevents premature action and gives you a review checkpoint.
+
+Three ways to activate:
+1. **Press `Shift+Tab` twice** — cycles through Normal → Auto-Accept → Plan Mode
+2. **Type `/plan`** — enters Plan Mode directly
+3. **Set in config** — `defaultMode: "plan"` in settings.json
+
+This directly addresses planning drift: the human reviews the plan *before* execution begins, catching goal misalignment early when it is cheap to correct.
+
+#### RALPH Loops — Autonomous Closed-Loop Iteration
+
+RALPH (named after Ralph Wiggum from *The Simpsons*) is an autonomous loop technique. A **Stop hook** intercepts Claude's exit attempts, re-feeds the original prompt, and continues the cycle until the agent outputs a **completion promise** (e.g., `"RALPH_COMPLETE"`).
+
+Without RALPH, you are the loop. For large-scale work — refactoring an entire module, generating test coverage for 40 files, triaging a backlog — this human-in-the-loop overhead is the bottleneck. RALPH removes you.
+
+**Installing the ralph-wiggum plugin:**
+
+```bash
+# Install the official plugin
+claude plugin add ralph-wiggum
+
+# Or install directly from GitHub
+claude plugin add ghuntley/ralph-wiggum
+```
+
+The plugin registers a Stop hook and a custom `/ralph-loop` skill. Once installed, invoke it:
 
 ```bash
 /ralph-loop "Refactor all API handlers to use the new error format. Run tests after each file."
 ```
 
-The key mechanism is a **completion promise** — a specific word or phrase (commonly `"RALPH_COMPLETE"`) that Claude outputs when it believes the task is truly finished. The Stop hook checks for this promise on every exit attempt. If it is absent, the loop continues.
+**How it works under the hood:**
 
-Control parameters:
-- `--max-iterations` — safety cap to prevent runaway loops
-- `--completion-promise` — the exact string that signals done
+1. The Stop hook fires every time Claude tries to exit.
+2. It checks Claude's final output for the **completion promise** — a specific string (default: `"RALPH_COMPLETE"`) that Claude outputs only when it believes the task is truly finished.
+3. If the promise is absent, the hook re-feeds the original prompt with context: "Continue working. You have not finished yet."
+4. If the promise is present, the hook allows the exit and the loop terminates.
+
+**Control parameters:**
+- `--max-iterations` — safety cap to prevent runaway loops (default varies by configuration)
+- `--completion-promise` — the exact string that signals done (default: `"RALPH_COMPLETE"`)
+
+**Manual RALPH setup (without the plugin):**
+
+If you prefer to wire it yourself, the core mechanism is a Stop hook in your `settings.json`:
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if ! grep -q 'RALPH_COMPLETE' /tmp/claude_last_output; then echo 'Continue working on the task. Output RALPH_COMPLETE only when fully done.'; exit 0; else exit 0; fi"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The plugin abstracts this away and adds iteration counting, logging, and graceful termination.
 
 Real-world results are striking. Geoffrey Huntley reportedly ran a 3-month RALPH loop that built a complete programming language. YC hackathon teams have shipped 6+ repos overnight for under $300 in API costs. The technique works best for batch operations: large refactors, test coverage generation, documentation sweeps, and support ticket triage.
 
-The core insight: **verification drives everything.** Give Claude a way to verify its own work (tests, linters, type checks), and it can run reliably for hours.
+The core insight: **verification drives everything.** Give Claude a way to verify its own work (tests, linters, type checks), and it can run reliably for hours. This is why RALPH addresses both the planning bottleneck (structured iteration prevents drift) and the execution bottleneck (verification catches errors before they compound).
 
-RALPH is a **closed loop** — no human steering once it starts. For steerable autonomy, see Plan-File Loops below.
+RALPH is a **closed loop** — no human steering once it starts.
 
----
+#### Plan-File Loops — Steerable Open-Loop Iteration
 
-## 2. Plan-File Loops — Steerable Autonomy via Open Loop
-
-### What it is
-
-Plan-File Loops are the open-loop counterpart to RALPH. Instead of iterating silently until a completion signal, the agent writes its plan to a file (e.g. `TODO.md`, `plan.md`), works through items one by one, and checks the file for changes between iterations. The human steers by editing the file — reordering priorities, adding tasks, removing items, or leaving notes.
-
-### What problem it solves
-
-RALPH is powerful but unsteerable. Once a closed loop starts, you cannot redirect it without killing the session. Plan-File Loops give you a shared communication channel: the file. The agent has autonomy *within* each task, but the human controls *which* tasks and *in what order*. This is the difference between "go build everything on this list" and "go build everything and never ask me again."
-
-### How to use it
-
-1. Create a plan file that Claude reads at the start of each iteration:
+Plan-File Loops are the open-loop counterpart to RALPH. The agent writes its plan to a file (e.g., `TODO.md`), works through items one by one, and checks the file for changes between iterations. The human steers by editing the file.
 
 ```markdown
 # Plan — Auth Refactor
@@ -165,13 +292,9 @@ RALPH is powerful but unsteerable. Once a closed loop starts, you cannot redirec
 <!-- NOTE: skip rate limiting for now, defer to v2 -->
 ```
 
-2. Use a Stop hook (similar to RALPH) that re-feeds the prompt on each exit, but the prompt includes "read plan.md and work on the next unchecked item."
+Use a Stop hook that re-feeds "read plan.md and work on the next unchecked item." Between iterations, edit the file from your phone. The agent adjusts.
 
-3. Between iterations, edit the file: reorder items, add new ones, leave `<!-- NOTE: -->` comments. The agent picks them up on the next cycle.
-
-The key advantage: you can go to sleep and *still* wake up to redirect. Drop a note in the file from your phone, and the agent adjusts.
-
-### When to use which
+The explicit plan file is an external planning artifact — it prevents goal drift by giving both human and agent a shared, persistent source of truth about what should happen next.
 
 | | RALPH (closed) | Plan-File (open) |
 |---|---|---|
@@ -180,23 +303,77 @@ The key advantage: you can go to sleep and *still* wake up to redirect. Drop a n
 | **Risk** | Runaway loops, wasted work on wrong path | Agent may re-read file too often, slight overhead |
 | **Human role** | Set and forget | Light supervision via file edits |
 
+#### Multi-Turn Agentic Workflows — The Self-Correcting Loop
+
+Claude Code does not just answer questions. It works through tasks in a loop: **gather context → take action → verify results**, chaining dozens of tool calls and course-correcting based on each result.
+
+```
+You: "Add rate limiting to the API"
+
+Claude: [Read src/routes/api.ts]
+        [Grep "middleware" across codebase]
+        [Read src/middleware/auth.ts for pattern reference]
+        [Edit src/middleware/rateLimit.ts — create new file]
+        [Edit src/routes/api.ts — add middleware]
+        [Bash: npm test]
+        [Read test output — 2 failures]
+        [Edit src/middleware/rateLimit.ts — fix edge case]
+        [Bash: npm test]
+        [All tests pass]
+        "Done. Added rate limiting middleware with sliding window..."
+```
+
+Each step informs the next. This addresses the execution bottleneck directly: errors are caught and corrected *within the same workflow*, not compounded silently. The three phases — gather context, take action, verify results — interleave continuously. Claude might gather more context mid-implementation when it discovers something unexpected. This is what makes it agentic rather than generative.
+
+#### Headless Mode — Non-Interactive Execution
+
+The `-p` flag runs Claude Code non-interactively for CI/CD, scripts, GitHub Actions, and cron jobs.
+
+```bash
+# Simple question
+claude -p "What does the auth module do?"
+
+# Pipe input
+cat error.log | claude -p "What caused this crash?"
+
+# Structured JSON output
+claude -p "Extract function names from auth.py" \
+  --output-format json \
+  --json-schema '{"type":"object","properties":{"functions":{"type":"array","items":{"type":"string"}}}}'
+
+# PR review in CI
+gh pr diff "$PR_NUMBER" | claude -p \
+  --append-system-prompt "You are a security engineer. Review for vulnerabilities." \
+  --output-format json
+
+# Continue conversations
+claude -p "Now focus on database queries" --continue
+
+# Streaming
+claude -p "Explain recursion" --output-format stream-json --verbose
+```
+
+**Security note**: In `-p` mode, trust verification is disabled. Use `--allowedTools` to scope permissions explicitly.
+
 ---
 
-## 3. Hooks — Deterministic Control Over Non-Deterministic Behavior
+### 2C. Verification Mechanisms — Solving the Verification and Execution Bottlenecks
 
-### What it is
+The verification bottleneck: the agent cannot judge whether it is on the right track.
 
-Hooks are user-defined shell commands that execute at specific lifecycle points in Claude Code. They fire deterministically — you are not *hoping* Claude remembers to run Prettier; it *always* runs because the hook guarantees it.
+The solution: deterministic guardrails that do not rely on the LLM's probabilistic judgment.
 
-### What problem it solves
+#### Hooks — Deterministic Control Over Non-Deterministic Behavior
 
-LLMs are probabilistic. You can tell Claude "always format with Prettier after editing a file" in your CLAUDE.md, and it will do it 90% of the time. Hooks make it 100%. They also enable workflows that Claude cannot initiate on its own: desktop notifications, audit logging, blocking edits to protected files, and re-injecting context after compaction.
+Hooks are user-defined shell commands that execute at specific lifecycle points. They fire deterministically — you are not *hoping* Claude remembers to run Prettier; it *always* runs because the hook guarantees it.
 
-### Hook event lifecycle
+LLMs are probabilistic. You can tell Claude "always format with Prettier after editing" in CLAUDE.md, and it will do it ~90% of the time. Hooks make it 100%.
+
+**Hook event lifecycle:**
 
 | Event | When it fires |
 |---|---|
-| `SessionStart` | Session begins or resumes (including after compaction) |
+| `SessionStart` | Session begins or resumes |
 | `UserPromptSubmit` | After you press Enter, before Claude processes |
 | `PreToolUse` | Before a tool call executes — **can block it** |
 | `PostToolUse` | After a tool call succeeds |
@@ -206,8 +383,6 @@ LLMs are probabilistic. You can tell Claude "always format with Prettier after e
 | `ConfigChange` | When a settings file changes |
 | `PreCompact` | Before context compaction |
 | `SessionEnd` | When the session terminates |
-
-### Practical examples
 
 **Auto-format after every edit** (PostToolUse):
 
@@ -229,7 +404,7 @@ LLMs are probabilistic. You can tell Claude "always format with Prettier after e
 }
 ```
 
-**Block edits to protected files** (PreToolUse — exit code 2 blocks the action):
+**Block edits to protected files** (PreToolUse — exit code 2 blocks):
 
 ```bash
 #!/bin/bash
@@ -267,249 +442,11 @@ exit 0
 
 There are also **prompt-based hooks** (`"type": "prompt"`) where a small Claude model makes a yes/no decision, and **agent-based hooks** (`"type": "agent"`) where a sub-agent with full tool access verifies conditions before allowing the action.
 
----
+Hooks are the "compass" from the bottleneck analogy. They provide external, deterministic verification that does not depend on the LLM's judgment.
 
-## 4. MCP Servers — Connecting Claude to Everything
+#### Permission Modes — Safety as Verification
 
-### What it is
-
-MCP (Model Context Protocol) is an open standard created by Anthropic that lets Claude Code connect to external tools — databases, browsers, APIs, internal services — via a unified protocol. Think of it as USB for AI tools: one plug, many devices.
-
-### What problem it solves
-
-Without MCP, Claude Code can only interact with your local filesystem and shell. With MCP, it can query your database, browse the web, search your company's Confluence, interact with GitHub's API natively, manage your cloud infrastructure, and more — all through the same natural-language interface.
-
-### How to use it
-
-Add an MCP server from the command line:
-
-```bash
-claude mcp add github -- npx -y @modelcontextprotocol/server-github
-```
-
-Or configure it in `.mcp.json` at your project root (version-controlled):
-
-```json
-{
-  "mcpServers": {
-    "github": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-github"],
-      "env": {
-        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
-      }
-    }
-  }
-}
-```
-
-MCP supports three transport modes: **stdio** (default, simplest), **SSE** (Server-Sent Events), and **Streamable HTTP**.
-
-**Tool Search** is a key optimization: when your MCP tool descriptions would consume more than 10% of the context window, Claude Code automatically enables dynamic tool loading. Instead of pre-loading all tool descriptions, it searches for the right tool on demand.
-
-Configuration scopes: project-scoped (`.mcp.json`), project-specific (`.claude/settings.local.json`), or user-specific (`~/.claude/settings.local.json`).
-
----
-
-## 5. Slash Commands — One-Keystroke Workflows
-
-### What it is
-
-Slash commands are shortcuts you invoke by typing `/` followed by a name. Some are built-in; others are custom skills you create.
-
-### What problem it solves
-
-Repetitive multi-step workflows — creating commits, reviewing PRs, compacting context — should not require typing full prompts every time. Slash commands reduce cognitive overhead and enforce consistent patterns.
-
-### Complete built-in command reference
-
-| Command | What it does |
-|---|---|
-| `/init` | Generates a CLAUDE.md for your project. Run this first in any new repo. |
-| `/compact [instructions]` | Compresses conversation history. Optionally focus on specific topics. |
-| `/clear` | Wipes conversation history entirely. Start fresh. |
-| `/cost` | Shows token usage statistics for the session. |
-| `/model` | Switch the AI model mid-conversation. |
-| `/permissions` | View and manage tool permission rules. |
-| `/memory` | Edit CLAUDE.md memory files directly. |
-| `/doctor` | Health-check your Claude Code installation. |
-| `/config` | Open the Settings interface. |
-| `/context` | Visualize current context usage as a colored grid. |
-| `/plan` | Enter Plan Mode directly. |
-| `/resume [session]` | Resume a previous session by ID or name. |
-| `/rewind` | Rewind conversation and/or code to a previous state. |
-| `/export [filename]` | Export conversation to a file or clipboard. |
-| `/tasks` | List and manage background tasks. |
-| `/mcp` | Manage MCP server connections. |
-| `/debug [description]` | Troubleshoot the session by reading the debug log. |
-| `/status` | Show version, model, account, connectivity info. |
-| `/theme` | Change the color theme. |
-| `/vim` | Enable vim-style editing in the prompt. |
-| `/copy` | Copy the last assistant response to clipboard. |
-| `/help` | Show all available commands including custom ones. |
-
----
-
-## 6. CLAUDE.md Files — Teaching Claude Your Project's DNA
-
-### What it is
-
-CLAUDE.md is a markdown file that Claude reads automatically at the start of every session. It contains persistent context about your project: coding conventions, architecture decisions, build commands, testing instructions, and anything else you would otherwise repeat in every prompt.
-
-### What problem it solves
-
-Without CLAUDE.md, every new Claude Code session starts from zero. You have to re-explain your stack, your conventions, your file structure. CLAUDE.md gives Claude institutional memory — it knows your project before you say a word.
-
-### The memory hierarchy
-
-| Level | Location | Scope |
-|---|---|---|
-| User memory | `~/.claude/CLAUDE.md` | All your projects. Global preferences. |
-| Project memory | `CLAUDE.md` at repo root | This repo. Tech stack, patterns, build commands. Version-controlled. |
-| Rules directory | `.claude/rules/*.md` | Organized, focused rule files for larger projects. |
-| Nested directories | `packages/frontend/.claude/rules/` | Monorepo support. Package-specific rules. |
-
-### How to set it up
-
-Run `/init` to generate a starter CLAUDE.md, then customize it:
-
-```markdown
-# Project: MyApp
-
-## Tech Stack
-- TypeScript, React 18, Next.js 14 App Router
-- Tailwind CSS for styling
-- Prisma ORM with PostgreSQL
-- Vitest for testing
-
-## Conventions
-- Use named exports, not default exports
-- All API routes return `{ data, error }` shape
-- Commit messages follow Conventional Commits
-- Never use `any` type — use `unknown` and narrow
-
-## Common Commands
-- `pnpm dev` — start dev server
-- `pnpm test` — run test suite
-- `pnpm lint` — run ESLint + Prettier check
-- `pnpm db:migrate` — run Prisma migrations
-```
-
-**Quick memory addition**: Press `#` during a session to add a memory. Type your instruction and hit Enter — Claude writes it to the appropriate CLAUDE.md.
-
----
-
-## 7. Plan Mode — Think Before You Act
-
-### What it is
-
-Plan Mode restricts Claude to read-only operations. It can analyze your codebase using Glob, Grep, and Read, but it cannot edit files, run commands, or modify anything. It creates a detailed implementation plan and waits for your approval before executing.
-
-### What problem it solves
-
-For complex changes — refactoring auth, migrating a database schema, restructuring a module — you do not want Claude to start changing files immediately. You want to see the plan first, challenge it, refine it, and *then* execute. Plan Mode prevents premature action and gives you a review checkpoint.
-
-### How to activate it
-
-Three ways:
-1. **Press `Shift+Tab` twice** — cycles through Normal → Auto-Accept → Plan Mode
-2. **Type `/plan`** — enters Plan Mode directly
-3. **Set in config** — `defaultMode: "plan"` in settings.json
-
-When active, you will see `plan mode on` at the bottom of the terminal. Claude explores the codebase, reads files, searches patterns, and outputs a structured plan with specific files, changes, and rationale.
-
-To exit: press `Shift+Tab` again. Claude will ask for confirmation before executing.
-
----
-
-## 8. Worktrees — Parallel Development Without Collisions
-
-### What it is
-
-Git worktrees create separate working directories that each have their own files and branch, while sharing the same repository history. Claude Code has native support for worktrees, allowing multiple Claude sessions to work on the same repo simultaneously without interfering with each other.
-
-### What problem it solves
-
-If you run two Claude sessions against the same directory, their file edits collide. One session writes a file, the other overwrites it. Worktrees solve this by giving each session its own isolated copy of the codebase.
-
-### How to use it
-
-From the CLI:
-
-```bash
-claude --worktree feature-auth
-```
-
-This creates a worktree at `.claude/worktrees/feature-auth` with a new branch, and starts Claude in that directory.
-
-For sub-agents, add `isolation: worktree` to the agent's frontmatter, or ask Claude to "use worktrees for your agents." Each sub-agent then works in its own worktree, preventing merge conflicts between parallel tasks.
-
-For non-git version control (SVN, Perforce, Mercurial), configure `WorktreeCreate` and `WorktreeRemove` hooks with your custom logic.
-
----
-
-## 9. Sub-Agents and the Task Tool — Divide and Conquer
-
-### What it is
-
-Sub-agents are specialized AI assistants that Claude can spawn to handle specific tasks. Each runs in its own context window with a custom system prompt, specific tool access, and independent permissions. The Task tool is how Claude dispatches work to these agents.
-
-### What problem it solves
-
-A single conversation context gets crowded fast. If Claude is implementing a feature, debugging a test, and researching an API simultaneously, the context window fills up and quality degrades. Sub-agents keep each concern isolated: the research happens in one context, the implementation in another, and the main agent stays clean.
-
-### Three execution modes
-
-1. **Parallel** — 3+ independent tasks with no shared state. Claude fans out to multiple sub-agents simultaneously.
-2. **Sequential** — Tasks with dependencies. Output from agent A feeds into agent B.
-3. **Background** — Research or analysis that is not blocking your current work. Results surface when ready.
-
-### Built-in agent types
-
-| Agent | Purpose |
-|---|---|
-| `Explore` | Read-only codebase exploration. Uses Glob, Grep, Read. |
-| `Plan` | Creates implementation plans without modifying files. |
-| `general-purpose` | Full tool access. The default. |
-
-### Custom sub-agents
-
-Create `.claude/agents/security-reviewer/AGENT.md`:
-
-```yaml
----
-name: security-reviewer
-description: Reviews code changes for security vulnerabilities
-model: claude-sonnet-4-20250514
-allowed-tools: Read, Grep, Glob
----
-
-You are a security engineer. Review the provided code for:
-1. Injection vulnerabilities (SQL, XSS, command)
-2. Authentication/authorization issues
-3. Sensitive data exposure
-4. Insecure dependencies
-
-Report findings with severity, file location, and remediation.
-```
-
-### Background execution
-
-Press `Ctrl+B` while an agent is running to move it to the background. Use `/tasks` to see all running background processes. This lets you continue working in the main conversation while sub-agents research, analyze, or build in parallel.
-
----
-
-## 10. Permission Modes — Safety at Scale
-
-### What it is
-
-Claude Code has a tiered permission system that controls what Claude can do. Read-only operations (file reads, grep) require no approval. Bash commands require per-invocation approval. File modifications require session-level approval.
-
-### What problem it solves
-
-You want Claude to be autonomous enough to be useful, but safe enough not to `rm -rf` your repo. The permission system lets you dial the trust level exactly where you need it — from fully manual approval to fully autonomous execution.
-
-### Permission modes
+The permission system controls what Claude can do, providing a verification layer that catches dangerous actions before they execute.
 
 | Mode | Behavior |
 |---|---|
@@ -519,9 +456,7 @@ You want Claude to be autonomous enough to be useful, but safe enough not to `rm
 | `dontAsk` | Auto-denies anything not explicitly allowed via rules. |
 | `bypassPermissions` | Skips all prompts. **Only use in sandboxed environments.** |
 
-### Allowlist and denylist
-
-Configure in `settings.json`:
+Configure allowlists and denylists in `settings.json`:
 
 ```json
 {
@@ -541,281 +476,188 @@ Configure in `settings.json`:
 }
 ```
 
-Rules evaluate in order: **deny > ask > allow**. The first match wins. You can use wildcard patterns (`*`), and the syntax is aware of shell operators — `Bash(safe-cmd *)` will not allow `safe-cmd && rm -rf /`.
-
-Toggle with `Shift+Tab` during a session, or use `/permissions` to view and modify rules.
+Rules evaluate: **deny > ask > allow**. First match wins. Toggle with `Shift+Tab` or `/permissions`.
 
 ---
 
-## 11. Auto-Memory — Claude Writes Notes to Itself
+## Layer 3: Multi-Agent Architecture — Divide and Conquer
 
-### What it is
+Multi-agent architecture addresses all four bottlenecks simultaneously by splitting the work across specialized agents with isolated contexts. The trade-off: it introduces **coordination complexity** as a new problem.
 
-Auto-memory is a persistent directory where Claude records learnings, patterns, and insights *as it works*. Unlike CLAUDE.md (which you write for Claude), auto-memory contains notes Claude writes for itself based on what it discovers during sessions.
+### Sub-Agents and the Task Tool
 
-### What problem it solves
+Sub-agents are specialized AI assistants that Claude spawns for specific tasks. Each runs in its own context window with a custom system prompt, specific tool access, and independent permissions.
 
-Claude has no memory between sessions by default. Auto-memory bridges this gap by letting Claude record what it learns — project patterns, key commands, architectural decisions — and load those notes at the start of every future session.
+A single conversation context gets crowded fast. Sub-agents keep each concern isolated: research in one context, implementation in another, the main agent stays clean. This directly solves the **memory bottleneck** (each agent has its own full context window) and the **planning bottleneck** (each agent has a focused, narrow goal).
 
-### How it works
+**Three execution modes:**
 
-Each project gets its own memory directory at `~/.claude/projects/<project-hash>/memory/`. The first 200 lines of the main memory file (`MEMORY.md`) are loaded into Claude's system prompt at every session start.
+1. **Parallel** — 3+ independent tasks with no shared state. Fan out simultaneously.
+2. **Sequential** — Tasks with dependencies. Output from agent A feeds into agent B.
+3. **Background** — Non-blocking research or analysis. Results surface when ready.
 
-Claude writes to memory when it discovers something worth remembering: a non-obvious build command, an architectural pattern, a preference you expressed. You can also manually trigger memory saves by pressing `#` and typing an instruction.
+**Built-in agent types:**
 
-The memory hierarchy:
-- **Auto-memory**: Notes Claude writes for itself
-- **User CLAUDE.md**: Global preferences you write (`~/.claude/CLAUDE.md`)
-- **Project CLAUDE.md**: Project-specific instructions you write (repo root)
-- **Rules directory**: Organized rule files (`.claude/rules/`)
-
----
-
-## 12. IDE Integrations — Claude in Your Editor
-
-### What it is
-
-Claude Code integrates with VS Code and JetBrains IDEs (IntelliJ, WebStorm, PyCharm, etc.) through dedicated extensions that bridge the terminal-based CLI with your editor's GUI.
-
-### What problem it solves
-
-Without IDE integration, you are constantly context-switching between your editor and the terminal. The IDE extension lets Claude see your current file, selected code, and error messages automatically. It shows proposed changes as diffs in the editor. It makes Claude feel native.
-
-### VS Code
-
-Install the extension from the marketplace. It provides:
-- **Native chat panel** inside VS Code
-- **Checkpoint-based undo** — revert Claude's changes to any point
-- **@-mention files** with specific line ranges from your selection
-- **Parallel conversations** in separate tabs or windows
-- **Auto-accept edits** as they are made (optional)
-- **Diff viewer** for reviewing proposed changes
-
-### JetBrains
-
-Install the plugin from the JetBrains Marketplace. It provides:
-- **Terminal integration** — coordinates with the Claude Code CLI in your IDE terminal
-- **Diff viewer** — opens proposed edits in the IDE's native diff view
-- **File references** and conversation history
-- **Shared configuration** via the same `~/.claude/settings.json`
-
-In both IDEs, Claude can see your current file, selected code, and diagnostic messages (errors, warnings) without you manually copying them.
-
----
-
-## 13. Keyboard Shortcuts — Speed Through Muscle Memory
-
-### What problem it solves
-
-Reaching for the mouse or typing full commands slows you down. These shortcuts turn Claude Code into a keyboard-driven power tool.
-
-### Essential shortcuts
-
-| Shortcut | Action |
+| Agent | Purpose |
 |---|---|
-| `Esc` | Cancel current action |
-| `Esc` + `Esc` | Rewind/summarize — restore conversation to a previous point |
-| `Ctrl+C` | Cancel current input or generation |
-| `Ctrl+D` | Exit Claude Code |
-| `Ctrl+L` | Clear terminal screen (keeps history) |
-| `Ctrl+B` | Background running tasks (tmux users: press twice) |
-| `Ctrl+T` | Toggle task list view |
-| `Ctrl+O` | Toggle verbose output (see detailed tool usage) |
-| `Ctrl+G` | Open prompt in your default text editor |
-| `Ctrl+R` | Reverse search through command history |
-| `Ctrl+V` | Paste image from clipboard |
-| `Shift+Tab` | Cycle permission modes (Normal → Auto-Accept → Plan) |
-| `Alt+P` | Switch model without clearing prompt |
-| `Alt+T` | Toggle extended thinking mode |
-| `Up/Down` | Navigate command history (works across sessions) |
-| `Shift+Enter` | New line in prompt (instead of sending) |
-| `#` | Add a memory to CLAUDE.md |
-| `!` | Bash mode — run shell commands directly |
-| `@` | File path mention with autocomplete |
-| `/` | Invoke slash commands and skills |
+| `Explore` | Read-only codebase exploration. Uses Glob, Grep, Read. |
+| `Plan` | Creates implementation plans without modifying files. |
+| `general-purpose` | Full tool access. The default. |
 
-### Pro tips
+**Custom sub-agents** — create `.claude/agents/security-reviewer/AGENT.md`:
 
-- **`?`** shows all shortcuts for your specific terminal
-- macOS users: configure Option as Meta in your terminal for `Alt` shortcuts to work
-- **`/vim`** enables vim-style editing in the prompt input
-- **Tab** after `!` autocompletes from previous bash commands in the project
-
+```yaml
+---
+name: security-reviewer
+description: Reviews code changes for security vulnerabilities
+model: claude-sonnet-4-20250514
+allowed-tools: Read, Grep, Glob
 ---
 
-## 14. Tool Use Patterns — The Right Tool for the Job
+You are a security engineer. Review the provided code for:
+1. Injection vulnerabilities (SQL, XSS, command)
+2. Authentication/authorization issues
+3. Sensitive data exposure
+4. Insecure dependencies
 
-### What it is
-
-Claude Code has dedicated tools for different operations. Using the right tool matters for performance, permissions, and reliability.
-
-### What problem it solves
-
-Using `cat` via Bash to read a file bypasses the permission system, wastes context on shell overhead, and makes it harder for Claude to track what it has read. The dedicated tools are optimized for the agent loop.
-
-### Tool hierarchy
-
-| Task | Use This | Not This |
-|---|---|---|
-| Search for files by name | **Glob** (`**/*.ts`) | `find` via Bash |
-| Search file contents | **Grep** (regex patterns) | `grep` or `rg` via Bash |
-| Read a file | **Read** (with line ranges) | `cat` / `head` / `tail` via Bash |
-| Edit part of a file | **Edit** (string replacement) | `sed` / `awk` via Bash |
-| Write a new file | **Write** (full content) | `echo >` via Bash |
-| Run commands | **Bash** | N/A |
-
-### Why this matters
-
-1. **Permissions**: Read and Edit go through the permission system. `cat` via Bash does not.
-2. **Context efficiency**: Glob returns just file paths. `find` via Bash returns paths plus shell boilerplate.
-3. **Parallel execution**: Claude can batch multiple Glob and Grep calls in a single turn. Bash commands are sequential.
-4. **Hooks**: PreToolUse and PostToolUse hooks can trigger on Edit or Write. They cannot trigger on `sed` run through Bash.
-
-### The batch pattern
-
-When Claude needs multiple pieces of information, it should dispatch multiple tool calls in parallel:
-
-```
-[Grep("error handler", "src/"), Glob("**/*.test.ts"), Read("package.json")]
+Report findings with severity, file location, and remediation.
 ```
 
-This is faster than three sequential Bash calls and produces cleaner context.
+Press `Ctrl+B` to background a running agent. Use `/tasks` to see all background processes.
 
----
+### Worktrees — Isolated Execution Environments
 
-## 15. Git Workflows — Commits, PRs, and Branch Management
+Git worktrees give each agent session its own working directory and branch while sharing repository history.
 
-### What it is
-
-Claude Code has deep git integration. It can create commits with intelligent messages, create pull requests via `gh`, manage branches, and review code changes.
-
-### What problem it solves
-
-Git ceremonies are repetitive. Writing commit messages, creating PRs with proper descriptions, handling branch management — Claude automates all of it while respecting your project's conventions.
-
-### Creating commits
-
-Ask Claude naturally:
-
-```
-Look at my staged changes and create an appropriate commit.
-```
-
-Claude examines every modified file, identifies which changes belong together, and proposes separate commits if the changes are logically distinct. It generates messages following your conventions (Conventional Commits, etc. — specify in CLAUDE.md).
-
-In headless mode:
+If two Claude sessions edit the same directory, their file edits collide. Worktrees solve this — each session gets an isolated copy. This directly addresses the **execution bottleneck**: parallel agents cannot corrupt each other's state.
 
 ```bash
-claude -p "Create a commit for the staged changes" \
-  --allowedTools "Bash(git diff *),Bash(git log *),Bash(git commit *)"
+claude --worktree feature-auth
 ```
 
-### Creating pull requests
+Creates a worktree at `.claude/worktrees/feature-auth` with a new branch. For sub-agents, add `isolation: worktree` to get automatic isolation. For non-git VCS (SVN, Perforce, Mercurial), configure `WorktreeCreate` and `WorktreeRemove` hooks.
 
-```
-Create a PR for the current branch with a detailed description.
-```
+### The Agent SDK — Build Custom Multi-Agent Systems
 
-Claude analyzes all commits since the branch diverged, drafts a title (under 70 characters) and a structured body with a summary and test plan, and creates the PR via `gh pr create`.
+The Agent SDK exposes Claude Code's engine — the agent loop, built-in tools, context management — as a library for TypeScript and Python.
 
-### Code review
-
-```
-/review
+```bash
+npm install @anthropic-ai/claude-agent-sdk
 ```
 
-Or more specifically:
+```typescript
+import { query } from "@anthropic-ai/claude-agent-sdk";
 
+const messages = query({
+  prompt: "Find and fix security vulnerabilities in auth.py",
+  allowedTools: ["Read", "Edit", "Bash"],
+  options: { maxTurns: 20 },
+});
+
+for await (const message of messages) {
+  console.log(message);
+}
 ```
-Review the changes on this branch for security issues and performance problems.
-```
 
-### Best practices
-
-- Specify your commit message convention in CLAUDE.md
-- Use a naming scheme for Claude-created branches (e.g., `claude/[feature]-[session-id]`)
-- Create draft PRs to review before marking ready
-- Claude appends `Co-Authored-By: Claude` to commits it creates
+The SDK lets you build multi-agent architectures tailored to your specific needs: a planning agent that decomposes work, execution agents that implement in parallel, and a review agent that validates results. This is the full realization of Layer 3 — purpose-built agent teams for your domain.
 
 ---
 
-## 16. Context Management — Keeping Claude Sharp
+## The Capability Layer — Extending Reach and Reducing Friction
 
-### What it is
+Not every feature maps to the four bottlenecks. Some features extend what the agent *can do* (reach) or make the human-agent interaction faster (ergonomics). These are multipliers on top of the three solution layers.
 
-Claude Code has a finite context window. As your conversation grows, so does the token count per message. Context management is the set of tools and techniques for keeping the context window clean and focused.
+### MCP Servers — Connecting Claude to Everything
 
-### What problem it solves
+MCP (Model Context Protocol) lets Claude Code connect to external tools — databases, browsers, APIs, internal services — via a unified protocol. Think of it as USB for AI tools: one plug, many devices.
 
-Context degradation is the primary failure mode of long Claude Code sessions. As the window fills up, response quality drops, costs increase, and Claude starts forgetting earlier instructions. Active context management prevents this.
+Without MCP, Claude can only see filesystem and shell. With MCP, it queries databases, browses the web, searches Confluence, manages cloud infrastructure — all through natural language.
 
-### /compact — Conversation compression
-
-```
-/compact
+```bash
+claude mcp add github -- npx -y @modelcontextprotocol/server-github
 ```
 
-Claude summarizes the entire conversation, preserving key decisions and discarding redundant detail. You can provide focus instructions:
-
-```
-/compact Focus only on the authentication refactor. Discard everything about styling.
-```
-
-Compaction is now nearly instant — Claude maintains a continuous background summary, so `/compact` just loads that summary into a fresh context.
-
-**Auto-compact** triggers when the context window reaches approximately 95% capacity. But do not wait for it. Best practice: **run `/compact` every time you finish a task** before starting the next one.
-
-### /clear — Hard reset
-
-```
-/clear
-```
-
-Wipes everything. Use this when switching to a completely unrelated task.
-
-### /context — Visualization
-
-```
-/context
-```
-
-Shows a colored grid of what is consuming your context window. Useful for diagnosing why Claude seems confused.
-
-### Re-inject context after compaction
-
-Use a `SessionStart` hook with a `compact` matcher to restore critical context that compaction might lose:
+Or configure in `.mcp.json`:
 
 ```json
 {
-  "hooks": {
-    "SessionStart": [
-      {
-        "matcher": "compact",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "echo 'Reminder: use Bun, not npm. Run bun test before committing.'"
-          }
-        ]
-      }
-    ]
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": { "GITHUB_TOKEN": "${GITHUB_TOKEN}" }
+    }
   }
 }
 ```
 
----
+Three transport modes: **stdio** (default), **SSE**, and **Streamable HTTP**. Tool Search auto-enables when MCP tool descriptions exceed 10% of the context window.
 
-## 17. Custom Skills — Your Own Slash Commands
+### IDE Integrations — Claude in Your Editor
 
-### What it is
+Native extensions for VS Code and JetBrains eliminate context-switching between editor and terminal.
 
-Skills are reusable instruction sets you create as markdown files. They become slash commands (`/skill-name`) and can also be auto-loaded by Claude when relevant. Custom slash commands (`.claude/commands/`) have been merged into skills — both approaches create `/commands` and work the same way.
+**VS Code**: Chat panel, checkpoint-based undo, @-mention files, parallel conversations, diff viewer, auto-accept edits.
 
-### What problem it solves
+**JetBrains**: Terminal integration, native diff viewer, file references, shared configuration.
 
-Every team has repetitive workflows: deploy to staging, create a migration, run the security audit, generate a changelog. Skills encode these workflows once and let anyone on the team invoke them consistently.
+In both IDEs, Claude sees your current file, selected code, and diagnostic messages automatically.
 
-### Creating a skill
+### Slash Commands — One-Keystroke Workflows
+
+| Command | What it does |
+|---|---|
+| `/init` | Generates a CLAUDE.md for your project |
+| `/compact [instructions]` | Compresses conversation history |
+| `/clear` | Wipes conversation history |
+| `/cost` | Shows token usage statistics |
+| `/model` | Switch AI model mid-conversation |
+| `/permissions` | View and manage permission rules |
+| `/memory` | Edit CLAUDE.md memory files |
+| `/doctor` | Health-check installation |
+| `/config` | Open Settings interface |
+| `/context` | Visualize context usage |
+| `/plan` | Enter Plan Mode |
+| `/resume [session]` | Resume a previous session |
+| `/rewind` | Rewind to a previous state |
+| `/export [filename]` | Export conversation |
+| `/tasks` | List background tasks |
+| `/mcp` | Manage MCP connections |
+| `/debug [description]` | Troubleshoot via debug log |
+| `/status` | Show version, model, account info |
+| `/theme` | Change color theme |
+| `/vim` | Enable vim-style editing |
+| `/copy` | Copy last response to clipboard |
+| `/help` | Show all commands |
+
+### Keyboard Shortcuts
+
+| Shortcut | Action |
+|---|---|
+| `Esc` | Cancel current action |
+| `Esc` + `Esc` | Rewind conversation to a previous point |
+| `Ctrl+C` | Cancel current input or generation |
+| `Ctrl+D` | Exit Claude Code |
+| `Ctrl+L` | Clear terminal screen |
+| `Ctrl+B` | Background running tasks |
+| `Ctrl+T` | Toggle task list view |
+| `Ctrl+O` | Toggle verbose output |
+| `Ctrl+G` | Open prompt in text editor |
+| `Ctrl+R` | Reverse search command history |
+| `Ctrl+V` | Paste image from clipboard |
+| `Shift+Tab` | Cycle permission modes |
+| `Alt+P` | Switch model |
+| `Alt+T` | Toggle extended thinking |
+| `Up/Down` | Navigate command history |
+| `Shift+Enter` | New line in prompt |
+| `#` | Add memory |
+| `!` | Bash mode |
+| `@` | File path mention |
+| `/` | Slash commands |
+
+### Custom Skills — Your Own Slash Commands
+
+Skills encode team workflows as reusable markdown files that become slash commands.
 
 Create `~/.claude/skills/fix-issue/SKILL.md`:
 
@@ -828,275 +670,108 @@ disable-model-invocation: true
 
 Fix GitHub issue $ARGUMENTS following our coding standards.
 
-1. Read the issue description with `gh issue view $ARGUMENTS`
+1. Read the issue with `gh issue view $ARGUMENTS`
 2. Understand the requirements
 3. Implement the fix
 4. Write tests
 5. Create a commit with message "fix: resolve #$ARGUMENTS"
 ```
 
-Invoke it: `/fix-issue 423`
+Invoke: `/fix-issue 423`
 
-### Skill locations
+Skill locations: `~/.claude/skills/` (personal), `.claude/skills/` (team-shared), plugin directories.
 
-| Location | Scope |
-|---|---|
-| `~/.claude/skills/<name>/SKILL.md` | All your projects (personal) |
-| `.claude/skills/<name>/SKILL.md` | This project only (team-shared via git) |
-| Plugin `skills/` directory | Where the plugin is enabled |
+Advanced: `$ARGUMENTS` substitution, `context: fork` for isolated execution, `allowed-tools` restrictions, `!`command`` for dynamic context injection.
 
-### Advanced features
+### Settings and Configuration
 
-- **`$ARGUMENTS`** — string substitution for parameters
-- **`context: fork`** — run the skill in an isolated sub-agent
-- **`allowed-tools`** — restrict what tools the skill can use
-- **`disable-model-invocation: true`** — only you can trigger it (not Claude)
-- **`!`command``** — dynamic context injection; shell commands run before the skill is sent to Claude
-- **Supporting files** — templates, examples, scripts in the skill directory
+Five-tier hierarchy (highest to lowest precedence):
 
----
-
-## 18. Settings and Configuration — The Control Panel
-
-### What it is
-
-Claude Code's behavior is controlled through a hierarchy of JSON settings files and markdown memory files.
-
-### What problem it solves
-
-Different projects need different configurations. Your personal preferences should not override team settings. Enterprise policies should override everything. The settings hierarchy makes this work cleanly.
-
-### Settings file hierarchy (highest to lowest precedence)
-
-1. **Managed settings** — `/Library/Application Support/ClaudeCode/managed-settings.json` (macOS). Admin-deployed, cannot be overridden.
+1. **Managed settings** — Admin-deployed, cannot be overridden
 2. **CLI arguments** — `--allowedTools`, `--model`, etc.
-3. **Project local settings** — `.claude/settings.local.json` (gitignored, personal)
-4. **Project shared settings** — `.claude/settings.json` (version-controlled, team)
-5. **User settings** — `~/.claude/settings.json` (global, personal)
+3. **Project local** — `.claude/settings.local.json` (gitignored)
+4. **Project shared** — `.claude/settings.json` (version-controlled)
+5. **User settings** — `~/.claude/settings.json` (global)
 
-### What goes where
-
-| Setting | Where |
-|---|---|
-| Your personal preferences | `~/.claude/settings.json` |
-| Team conventions and permissions | `.claude/settings.json` |
-| Your local overrides | `.claude/settings.local.json` |
-| Enterprise policies | Managed settings (system path) |
-| MCP servers (shared) | `.mcp.json` at project root |
-| MCP servers (personal) | `.claude/settings.local.json` |
-
-### The .claude/ directory
+The `.claude/` directory:
 
 ```
 .claude/
 ├── settings.json          # Shared project settings (git)
 ├── settings.local.json    # Personal overrides (gitignored)
 ├── skills/                # Custom skills
-│   └── deploy/
-│       └── SKILL.md
 ├── agents/                # Custom sub-agents
-│   └── reviewer/
-│       └── AGENT.md
 ├── rules/                 # Organized instruction files
-│   ├── coding-style.md
-│   └── testing.md
 ├── hooks/                 # Hook scripts
-│   └── protect-files.sh
 └── worktrees/             # Isolated worktree directories
 ```
 
----
+### Git Workflows
 
-## 19. Headless Mode — Claude Without a Human
+Claude creates commits with intelligent messages, PRs via `gh`, manages branches, and reviews code — all respecting your CLAUDE.md conventions.
 
-### What it is
-
-The `-p` (or `--print`) flag runs Claude Code non-interactively. It executes a single query, outputs the result, and exits. This is the foundation for CI/CD integration, scripting, and building automation on top of Claude.
-
-### What problem it solves
-
-Interactive mode requires a human at the terminal. Headless mode lets you embed Claude in scripts, GitHub Actions, GitLab CI/CD, cron jobs, and automated pipelines — anywhere you need an AI agent without a human in the loop.
-
-### Basic usage
-
-```bash
-# Simple question
-claude -p "What does the auth module do?"
-
-# Pipe input
-cat error.log | claude -p "What caused this crash?"
-
-# Structured JSON output
-claude -p "Extract function names from auth.py" \
-  --output-format json \
-  --json-schema '{"type":"object","properties":{"functions":{"type":"array","items":{"type":"string"}}}}'
-
-# PR review in CI
-gh pr diff "$PR_NUMBER" | claude -p \
-  --append-system-prompt "You are a security engineer. Review for vulnerabilities." \
-  --output-format json
-
-# Auto-approve specific tools
-claude -p "Run tests and fix failures" \
-  --allowedTools "Bash,Read,Edit"
+```
+Look at my staged changes and create an appropriate commit.
 ```
 
-### Continuing conversations
-
-```bash
-# First request
-claude -p "Review this codebase for performance issues"
-
-# Continue the same conversation
-claude -p "Now focus on database queries" --continue
-
-# Or capture and resume a specific session
-session_id=$(claude -p "Start review" --output-format json | jq -r '.session_id')
-claude -p "Continue review" --resume "$session_id"
+```
+Create a PR for the current branch with a detailed description.
 ```
 
-### Streaming output
+In headless mode:
 
 ```bash
-claude -p "Explain recursion" \
-  --output-format stream-json \
-  --verbose \
-  --include-partial-messages
+claude -p "Create a commit for the staged changes" \
+  --allowedTools "Bash(git diff *),Bash(git log *),Bash(git commit *)"
 ```
 
-**Important security note**: In `-p` mode, trust verification is disabled. First-time codebase runs and new MCP servers execute without trust prompts. Use `--allowedTools` to scope permissions explicitly.
+### Cost Management
+
+| Feature | What it does |
+|---|---|
+| **Model Routing** | `/model` and `Alt+P` switch mid-session. Sub-agents target cheaper models. Match cost to complexity. |
+| **Cost Visibility** | `/cost` shows session tokens and spend. `/context` visualizes what is consuming the window. |
 
 ---
 
-## 20. Multi-Turn Agentic Workflows — How Claude Chains Actions
+## Putting It All Together
 
-### What it is
+Here is how the three layers compose into a daily workflow:
 
-Claude Code does not just answer questions. It works through tasks in a loop: **gather context, take action, verify results**, blending these phases as it chains dozens of tool calls together, course-correcting based on each result.
+1. **Start the day**: `claude --resume` loads CLAUDE.md and auto-memory. *(Layer 2: External Memory)*
 
-### What problem it solves
+2. **Plan the work**: `/plan` mode explores the codebase and designs the approach before changing anything. *(Layer 2: Process Discipline)*
 
-Traditional coding assistants generate code and hand it to you. You paste it in, run it, find the bug, go back to the assistant, paste the error, wait for a fix. Claude Code eliminates this round-trip by doing the entire cycle itself: write code, run tests, read errors, fix code, verify, repeat.
+3. **Execute with guardrails**: Hooks auto-format and block protected files. Permissions scope what is allowed. *(Layer 2: Verification)*
 
-### The agentic loop
+4. **Parallelize**: Sub-agents with worktree isolation handle independent tasks simultaneously. *(Layer 3: Multi-Agent)*
 
-```
-You: "Add rate limiting to the API"
+5. **Stay sharp**: `/compact` after each task. `#` to save discoveries. *(Layer 2: External Memory)*
 
-Claude: [Read src/routes/api.ts]
-        [Grep "middleware" across codebase]
-        [Read src/middleware/auth.ts for pattern reference]
-        [Edit src/middleware/rateLimit.ts — create new file]
-        [Edit src/routes/api.ts — add middleware]
-        [Bash: npm test]
-        [Read test output — 2 failures]
-        [Edit src/middleware/rateLimit.ts — fix edge case]
-        [Bash: npm test]
-        [All tests pass]
-        "Done. Added rate limiting middleware with sliding window..."
-```
+6. **Automate ceremony**: Commits, PRs, reviews follow CLAUDE.md conventions. *(Capability Layer)*
 
-Each step informs the next. Claude reads test output and uses it to fix bugs. It reads existing patterns in your codebase and follows them. It does not guess — it verifies.
+7. **Scale overnight**: RALPH loops iterate autonomously with completion promises. *(Layer 2: Process Discipline)*
 
-### The three phases
+8. **Build on top**: Agent SDK creates custom multi-agent systems for your team. *(Layer 3: Multi-Agent)*
 
-1. **Gather context**: Glob for files, Grep for patterns, Read for content. Claude builds a mental model of your codebase.
-2. **Take action**: Edit files, write new files, run commands. Claude implements the change.
-3. **Verify results**: Run tests, check types, lint. Claude confirms the change works.
+The four bottlenecks are independent, but the solutions compose. External memory keeps context clean so process discipline can work. Process discipline structures the workflow so verification has checkpoints to verify. Multi-agent architecture multiplies all of it by running isolated agents in parallel. Each layer makes the others more effective.
 
-These phases are not linear. They interleave. Claude might gather more context mid-implementation when it discovers something unexpected. This is what makes it agentic rather than generative.
-
----
-
-## 21. The Agent SDK — Build Your Own Agents
-
-### What it is
-
-The Claude Agent SDK exposes the same engine that powers Claude Code — the agent loop, built-in tools, context management — as a library you can use in TypeScript or Python to build your own agents.
-
-### What problem it solves
-
-Claude Code is designed for interactive terminal use. But what if you want an AI agent embedded in your web app? Or a custom CI bot? Or a specialized review agent that runs on every PR? The SDK gives you the building blocks without reinventing the agent loop.
-
-### Installation
-
-```bash
-npm install @anthropic-ai/claude-agent-sdk
-```
-
-### Basic usage (TypeScript)
-
-```typescript
-import { query } from "@anthropic-ai/claude-agent-sdk";
-
-const messages = query({
-  prompt: "Find and fix security vulnerabilities in auth.py",
-  allowedTools: ["Read", "Edit", "Bash"],
-  options: {
-    maxTurns: 20,
-  },
-});
-
-for await (const message of messages) {
-  console.log(message);
-}
-```
-
-### Key concepts
-
-- **`query` function** — the main entry point. Returns an async iterator that streams messages as Claude works.
-- **Built-in tools** — same tools as Claude Code (Read, Edit, Write, Bash, Glob, Grep).
-- **Custom sub-agents** — define agents programmatically with system prompts, tool access, and permissions.
-- **Programmatic configuration** — no filesystem dependencies. Define everything in code.
-- **The V2 interface** (preview) removes async generators; each turn is a separate `send()`/`stream()` call.
-
-The SDK lets you build agents that are not just coding assistants — they can be customer support bots, data pipeline monitors, infrastructure managers, or anything else you can describe in a system prompt and equip with tools.
-
----
-
-## Putting It All Together — A Power User's Daily Workflow
-
-Here is how these features compose into a real development workflow:
-
-1. **Start the day**: `claude --resume` to pick up where you left off, or `claude` in a project with a well-written CLAUDE.md.
-
-2. **Plan the work**: Use Plan Mode (`/plan` or `Shift+Tab` twice) to explore the codebase and design the approach before changing anything.
-
-3. **Execute with guard rails**: Switch to normal mode. Allowlist your safe commands in permissions. Let Claude work. Hooks auto-format code and block edits to protected files.
-
-4. **Parallelize**: For independent tasks, let Claude spawn sub-agents with worktree isolation. Feature in one worktree, bug fix in another.
-
-5. **Stay sharp**: Run `/compact` after completing each task. Use `/context` to monitor usage. Press `#` to save important discoveries to memory.
-
-6. **Automate the ceremony**: Let Claude handle commits (`/commit`), PR creation, and code review. Your CLAUDE.md defines the conventions it follows.
-
-7. **Scale overnight**: For large batch work, use RALPH loops. Set a completion promise, configure a max iteration count, and let Claude iterate autonomously.
-
-8. **Build on top**: Use the Agent SDK to create custom agents for your team's specific workflows — PR reviewers, migration helpers, security auditors.
-
-Claude Code is not a chatbot. It is a development platform. The features above are not independent — they are a system. The more of them you use together, the more powerful each one becomes.
+Claude Code is not a chatbot. It is a scaffolding system for long-horizon autonomous agents — and understanding the bottlenecks it solves is the key to using it well.
 
 ---
 
 ## Sources and Further Reading
 
-- [Claude Code Official Documentation](https://code.claude.com/docs/en/hooks-guide)
+- [Claude Code Official Documentation](https://docs.anthropic.com/en/docs/claude-code)
 - [Claude Code GitHub Repository](https://github.com/anthropics/claude-code)
-- [Agent SDK Documentation](https://platform.claude.com/docs/en/agent-sdk/overview)
-- [Claude Code Best Practices](https://code.claude.com/docs/en/best-practices)
-- [RALPH Wiggum Loop Technique](https://awesomeclaude.ai/ralph-wiggum)
-- [How Claude Code Works](https://code.claude.com/docs/en/how-claude-code-works)
-- [Claude Code Permissions Guide](https://code.claude.com/docs/en/permissions)
-- [Claude Code Memory Management](https://code.claude.com/docs/en/memory)
-- [MCP Server Configuration](https://code.claude.com/docs/en/mcp)
-- [Slash Commands and Skills](https://code.claude.com/docs/en/slash-commands)
-- [Headless Mode and Programmatic Usage](https://code.claude.com/docs/en/headless)
-- [Claude Code Sub-Agents](https://code.claude.com/docs/en/sub-agents)
-- [IDE Integration for VS Code](https://code.claude.com/docs/en/vs-code)
-- [Interactive Mode Reference](https://code.claude.com/docs/en/interactive-mode)
-- [Common Workflows](https://code.claude.com/docs/en/common-workflows)
-- [How I Use Claude Code - builder.io](https://www.builder.io/blog/claude-code)
-- [Awesome Claude Code Collection](https://github.com/hesreallyhim/awesome-claude-code)
-- [Claude Code 2025 Summary](https://medium.com/@joe.njenga/claude-code-2025-summary-from-launch-to-beast-timeline-features-full-breakdown-45e5f3d8d5ff)
+- [Agent SDK Documentation](https://docs.anthropic.com/en/docs/claude-code/sdk)
+- [Claude Code Best Practices](https://docs.anthropic.com/en/docs/claude-code/best-practices)
+- [RALPH Loop Technique](https://ghuntley.com/ralph/)
+- [Open-Loop AI Coding](https://ultrathink.me/blog/ai-coding-open-loop)
+- [Claude Code Memory Management](https://docs.anthropic.com/en/docs/claude-code/memory)
+- [MCP Protocol](https://docs.anthropic.com/en/docs/claude-code/mcp)
+- [Claude Code Sub-Agents](https://docs.anthropic.com/en/docs/claude-code/sub-agents)
+- [Claude Code Hooks](https://docs.anthropic.com/en/docs/claude-code/hooks)
+- [IDE Integration](https://docs.anthropic.com/en/docs/claude-code/ide-integrations)
 - [Git Worktrees with Claude Code](https://incident.io/blog/shipping-faster-with-claude-code-and-git-worktrees)
 - [Claude Code Hooks Mastery](https://github.com/disler/claude-code-hooks-mastery)
