@@ -13,19 +13,19 @@ This post covers every major feature, what problem it solves, and how to use it.
 
 ## The Problem Space
 
-An AI coding agent faces nine constraints. They fall into three layers — the agent's internal limits, how it coordinates with the outside world, and the developer's experience.
+An AI coding agent has nine functional problems. Every feature in this post exists to solve exactly one of them.
 
-| Layer | Area | Question | Solutions |
+| Area | Problem | Goal | Solutions |
 |---|---|---|---|
-| **Agent** | Knowledge | What does it know at session start? | 2 |
-| | Attention | What can it hold in working memory? | 2 |
-| | Autonomy | How long can it work without you? | 4 |
-| **Coordination** | Parallelism | How many things can it do at once? | 2 |
-| | Reach | What systems can it interact with? | 2 |
-| | Safety | How do you prevent it from causing damage? | 3 |
-| **Human** | Ergonomics | How do you minimize interaction friction? | 4 |
-| | Adaptability | How do you tailor it to your environment? | 3 |
-| | Cost | How do you maximize output per dollar? | 2 |
+| **Knowledge** | Agent starts every session blank — no memory of your stack, conventions, or past work | Retain project understanding across sessions | 2 |
+| **Attention** | Context window fills up — quality degrades, instructions forgotten, agent drifts | Stay sharp through long sessions | 2 |
+| **Autonomy** | Agent stops after each step and waits for you to prompt again | Complete multi-step work without babysitting | 4 |
+| **Parallelism** | Agent does one thing at a time in one place | Run multiple tasks simultaneously without collision | 2 |
+| **Reach** | Agent is blind to anything beyond local files and shell | Connect to databases, APIs, editors, CI | 2 |
+| **Safety** | Autonomous agent can `rm -rf`, force-push, or corrupt state | Grant power without risking damage | 3 |
+| **Ergonomics** | Every interaction requires typing full instructions from scratch | Minimize keystrokes and friction | 4 |
+| **Adaptability** | Every team, project, and stack is different | Tailor behavior without forking the tool | 3 |
+| **Cost** | Tokens are money with no visibility into spend or waste | Get more done per dollar | 2 |
 
 **Cost (2)** and **Parallelism (2)** are the sparsest — the biggest opportunity gaps for new tooling and tricks. Every entry in this post maps to exactly one area. If a new trick doesn't fit any of the nine, it's opening a tenth — pay attention.
 
